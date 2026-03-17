@@ -8,10 +8,34 @@
 		moves: string;
 	}
 
+	interface PositionReport {
+		material: string;
+		tactics: string[];
+		strategy: string[];
+		summary: string;
+	}
+
+	interface Checkpoint {
+		half_move: number;
+		move_san: string;
+		new_tactics: string[];
+		removed_tactics: string[];
+		new_strategy: string[];
+		removed_strategy: string[];
+	}
+
+	interface LineComparison {
+		engine_checkpoints: Checkpoint[];
+		user_checkpoints: Checkpoint[];
+	}
+
 	interface AnalysisResult {
 		best_move: string;
 		lines: PvLine[];
 		user_line: PvLine | null;
+		position_report: PositionReport;
+		comparison_text: string | null;
+		line_comparison: LineComparison | null;
 	}
 
 	let fen = $state('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -27,7 +51,7 @@
 		try {
 			const args: { fen: string; userMove?: string } = { fen };
 			if (userMove.trim()) {
-				args.userMove = userMove.trim();
+				args.userMove = userMove.trim().toLocaleLowerCase();
 			}
 			result = await invoke<AnalysisResult>('analyze_position', args);
 		} catch (e) {
@@ -95,6 +119,88 @@
 					<p class="moves">{line.moves}</p>
 				</div>
 			{/each}
+
+			<div class="report-section">
+				<h3>Position Analysis</h3>
+				<p class="material">{result.position_report.material}</p>
+
+				{#if result.position_report.tactics.length > 0}
+					<h4>Tactics</h4>
+					<ul class="findings">
+						{#each result.position_report.tactics as item (item)}
+							<li>{item}</li>
+						{/each}
+					</ul>
+				{/if}
+
+				{#if result.position_report.strategy.length > 0}
+					<h4>Strategy</h4>
+					<ul class="findings">
+						{#each result.position_report.strategy as item (item)}
+							<li>{item}</li>
+						{/each}
+					</ul>
+				{/if}
+
+				{#if result.line_comparison}
+					<h4>Engine Line Checkpoints</h4>
+					{#each result.line_comparison.engine_checkpoints as cp (cp.half_move)}
+						{@const hasChanges =
+							cp.new_tactics.length > 0 ||
+							cp.removed_tactics.length > 0 ||
+							cp.new_strategy.length > 0 ||
+							cp.removed_strategy.length > 0}
+						<div class="checkpoint">
+							<span class="checkpoint-label">After {cp.move_san}</span>
+							{#if !hasChanges}
+								<p class="no-findings">No changes</p>
+							{/if}
+							{#each cp.new_tactics as t (t)}
+								<p class="finding tactic added">+ {t}</p>
+							{/each}
+							{#each cp.removed_tactics as t (t)}
+								<p class="finding tactic removed">− {t}</p>
+							{/each}
+							{#each cp.new_strategy as s (s)}
+								<p class="finding strategic added">+ {s}</p>
+							{/each}
+							{#each cp.removed_strategy as s (s)}
+								<p class="finding strategic removed">− {s}</p>
+							{/each}
+						</div>
+					{/each}
+
+					<h4>User Line Checkpoints</h4>
+					{#each result.line_comparison.user_checkpoints as cp (cp.half_move)}
+						{@const hasChanges =
+							cp.new_tactics.length > 0 ||
+							cp.removed_tactics.length > 0 ||
+							cp.new_strategy.length > 0 ||
+							cp.removed_strategy.length > 0}
+						<div class="checkpoint">
+							<span class="checkpoint-label">After {cp.move_san}</span>
+							{#if !hasChanges}
+								<p class="no-findings">No changes</p>
+							{/if}
+							{#each cp.new_tactics as t (t)}
+								<p class="finding tactic added">+ {t}</p>
+							{/each}
+							{#each cp.removed_tactics as t (t)}
+								<p class="finding tactic removed">− {t}</p>
+							{/each}
+							{#each cp.new_strategy as s (s)}
+								<p class="finding strategic added">+ {s}</p>
+							{/each}
+							{#each cp.removed_strategy as s (s)}
+								<p class="finding strategic removed">− {s}</p>
+							{/each}
+						</div>
+					{/each}
+
+					<h4>Overall Comparison</h4>
+					<p>{result.comparison_text}</p>
+				{/if}
+			</div>
 		</div>
 	{/if}
 </main>
@@ -194,5 +300,79 @@
 		font-size: 0.85rem;
 		color: #555;
 		word-break: break-all;
+	}
+
+	.report-section {
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid #e5e7eb;
+	}
+
+	.report-section h3 {
+		font-size: 1.1rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.report-section h4 {
+		font-size: 0.95rem;
+		margin-top: 0.75rem;
+		margin-bottom: 0.25rem;
+		color: #374151;
+	}
+
+	.material {
+		font-weight: 500;
+		margin-bottom: 0.5rem;
+	}
+
+	.findings {
+		list-style: disc;
+		padding-left: 1.25rem;
+		font-size: 0.9rem;
+		color: #444;
+	}
+
+	.findings li {
+		margin-bottom: 0.25rem;
+	}
+
+	.checkpoint {
+		background: #fafafa;
+		border-left: 3px solid #d1d5db;
+		padding: 0.5rem 0.75rem;
+		margin-bottom: 0.5rem;
+		border-radius: 0 4px 4px 0;
+	}
+
+	.checkpoint-label {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #6b7280;
+		display: block;
+		margin-bottom: 0.25rem;
+	}
+
+	.no-findings {
+		font-size: 0.85rem;
+		color: #9ca3af;
+		font-style: italic;
+	}
+
+	.finding {
+		font-size: 0.85rem;
+		margin: 0.15rem 0;
+	}
+
+	.finding.tactic {
+		color: #b45309;
+	}
+
+	.finding.strategic {
+		color: #4338ca;
+	}
+
+	.finding.removed {
+		opacity: 0.55;
+		text-decoration: line-through;
 	}
 </style>
