@@ -18,6 +18,7 @@
 	interface Checkpoint {
 		half_move: number;
 		move_san: string;
+		material: string;
 		new_tactics: string[];
 		removed_tactics: string[];
 		new_strategy: string[];
@@ -143,59 +144,66 @@
 				{/if}
 
 				{#if result.line_comparison}
-					<h4>Engine Line Checkpoints</h4>
-					{#each result.line_comparison.engine_checkpoints as cp (cp.half_move)}
-						{@const hasChanges =
-							cp.new_tactics.length > 0 ||
-							cp.removed_tactics.length > 0 ||
-							cp.new_strategy.length > 0 ||
-							cp.removed_strategy.length > 0}
-						<div class="checkpoint">
-							<span class="checkpoint-label">After {cp.move_san}</span>
-							{#if !hasChanges}
-								<p class="no-findings">No changes</p>
-							{/if}
-							{#each cp.new_tactics as t (t)}
-								<p class="finding tactic added">+ {t}</p>
-							{/each}
-							{#each cp.removed_tactics as t (t)}
-								<p class="finding tactic removed">− {t}</p>
-							{/each}
-							{#each cp.new_strategy as s (s)}
-								<p class="finding strategic added">+ {s}</p>
-							{/each}
-							{#each cp.removed_strategy as s (s)}
-								<p class="finding strategic removed">− {s}</p>
-							{/each}
-						</div>
-					{/each}
-
-					<h4>User Line Checkpoints</h4>
-					{#each result.line_comparison.user_checkpoints as cp (cp.half_move)}
-						{@const hasChanges =
-							cp.new_tactics.length > 0 ||
-							cp.removed_tactics.length > 0 ||
-							cp.new_strategy.length > 0 ||
-							cp.removed_strategy.length > 0}
-						<div class="checkpoint">
-							<span class="checkpoint-label">After {cp.move_san}</span>
-							{#if !hasChanges}
-								<p class="no-findings">No changes</p>
-							{/if}
-							{#each cp.new_tactics as t (t)}
-								<p class="finding tactic added">+ {t}</p>
-							{/each}
-							{#each cp.removed_tactics as t (t)}
-								<p class="finding tactic removed">− {t}</p>
-							{/each}
-							{#each cp.new_strategy as s (s)}
-								<p class="finding strategic added">+ {s}</p>
-							{/each}
-							{#each cp.removed_strategy as s (s)}
-								<p class="finding strategic removed">− {s}</p>
+					<div class="comparison-grid">
+						<div class="comparison-column">
+							<h4>User Line Checkpoints</h4>
+							{#each result.line_comparison.user_checkpoints as cp (cp.half_move)}
+								{@const hasChanges =
+									cp.new_tactics.length > 0 ||
+									cp.removed_tactics.length > 0 ||
+									cp.new_strategy.length > 0 ||
+									cp.removed_strategy.length > 0}
+								<div class="checkpoint">
+									<span class="checkpoint-label">After {cp.move_san}</span>
+									<p class="checkpoint-material">{cp.material}</p>
+									{#if !hasChanges}
+										<p class="no-findings">No changes</p>
+									{/if}
+									{#each cp.new_tactics as t (t)}
+										<p class="finding tactic added">+ {t}</p>
+									{/each}
+									{#each cp.removed_tactics as t (t)}
+										<p class="finding tactic removed">− {t}</p>
+									{/each}
+									{#each cp.new_strategy as s (s)}
+										<p class="finding strategic added">+ {s}</p>
+									{/each}
+									{#each cp.removed_strategy as s (s)}
+										<p class="finding strategic removed">− {s}</p>
+									{/each}
+								</div>
 							{/each}
 						</div>
-					{/each}
+						<div class="comparison-column">
+							<h4>Engine Line Checkpoints</h4>
+							{#each result.line_comparison.engine_checkpoints as cp (cp.half_move)}
+								{@const hasChanges =
+									cp.new_tactics.length > 0 ||
+									cp.removed_tactics.length > 0 ||
+									cp.new_strategy.length > 0 ||
+									cp.removed_strategy.length > 0}
+								<div class="checkpoint">
+									<span class="checkpoint-label">After {cp.move_san}</span>
+									<p class="checkpoint-material">{cp.material}</p>
+									{#if !hasChanges}
+										<p class="no-findings">No changes</p>
+									{/if}
+									{#each cp.new_tactics as t (t)}
+										<p class="finding tactic added">+ {t}</p>
+									{/each}
+									{#each cp.removed_tactics as t (t)}
+										<p class="finding tactic removed">− {t}</p>
+									{/each}
+									{#each cp.new_strategy as s (s)}
+										<p class="finding strategic added">+ {s}</p>
+									{/each}
+									{#each cp.removed_strategy as s (s)}
+										<p class="finding strategic removed">− {s}</p>
+									{/each}
+								</div>
+							{/each}
+						</div>
+					</div>
 
 					<h4>Overall Comparison</h4>
 					<p>{result.comparison_text}</p>
@@ -207,7 +215,7 @@
 
 <style>
 	main {
-		max-width: 700px;
+		max-width: 1000px;
 		margin: 0 auto;
 		padding: 2rem;
 		font-family: system-ui, sans-serif;
@@ -285,14 +293,19 @@
 		font-weight: 700;
 		font-size: 1.1rem;
 		font-family: monospace;
+		padding: 0.15rem 0.5rem;
+		border-radius: 3px;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 	}
 
 	.positive {
-		color: #16a34a;
+		color: #1a1a1a;
+		background: #ffffff;
 	}
 
 	.negative {
-		color: #dc2626;
+		color: #ffffff;
+		background: #1a1a1a;
 	}
 
 	.moves {
@@ -349,7 +362,13 @@
 		font-weight: 600;
 		color: #6b7280;
 		display: block;
-		margin-bottom: 0.25rem;
+		margin-bottom: 0.15rem;
+	}
+
+	.checkpoint-material {
+		font-size: 0.8rem;
+		color: #374151;
+		margin: 0 0 0.25rem 0;
 	}
 
 	.no-findings {
@@ -374,5 +393,17 @@
 	.finding.removed {
 		opacity: 0.55;
 		text-decoration: line-through;
+	}
+
+	.comparison-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.comparison-column h4 {
+		margin-top: 0;
+		margin-bottom: 0.5rem;
 	}
 </style>

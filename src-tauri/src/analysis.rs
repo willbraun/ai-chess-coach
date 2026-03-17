@@ -5,7 +5,7 @@ use shakmaty::{san::SanPlus, uci::UciMove, Chess, Position};
 
 use crate::moves::PvLine;
 use crate::strategy::{analyze_all_strategy, analyze_material};
-use crate::tactics::detect_all_tactics;
+use crate::tactics::{detect_all_tactics, detect_discovered_attack};
 
 /// Full position report combining tactical and strategic analysis.
 #[derive(Serialize, Clone)]
@@ -29,6 +29,8 @@ pub struct Checkpoint {
     pub half_move: usize,
     /// The move (in SAN notation) that led to this checkpoint position
     pub move_san: String,
+    /// Material balance at this checkpoint
+    pub material: String,
     /// Tactical patterns that appeared since the previous checkpoint
     pub new_tactics: Vec<String>,
     /// Tactical patterns that disappeared since the previous checkpoint
@@ -82,28 +84,6 @@ fn build_summary(material: &str, tactics: &[String], strategy: &[String]) -> Str
     parts.join(". ")
 }
 
-/// Replays a sequence of UCI move strings from a position, returning
-/// each resulting position paired with the SAN notation of the move played.
-fn walk_pv(pos: &Chess, uci_moves: &[String]) -> Vec<(String, Chess)> {
-    let mut results = Vec::new();
-    let mut current = pos.clone();
-
-    for uci_str in uci_moves {
-        let uci = match uci_str.parse::<UciMove>() {
-            Ok(u) => u,
-            Err(_) => break,
-        };
-        let m = match uci.to_move(&current) {
-            Ok(m) => m,
-            Err(_) => break,
-        };
-        let san = SanPlus::from_move_and_play_unchecked(&mut current, m).to_string();
-        results.push((san, current.clone()));
-    }
-
-    results
-}
-
 /// Computes items in `current` that are not in `previous`.
 fn vec_added(previous: &[String], current: &[String]) -> Vec<String> {
     let prev_set: HashSet<&str> = previous.iter().map(|s| s.as_str()).collect();
@@ -116,48 +96,91 @@ fn vec_removed(previous: &[String], current: &[String]) -> Vec<String> {
     previous.iter().filter(|s| !curr_set.contains(s.as_str())).cloned().collect()
 }
 
-/// Walks a PV line and extracts tactics/strategy diffs at each checkpoint.
-/// Each checkpoint shows only what changed since the previous checkpoint.
-/// The first checkpoint diffs against the original position's analysis.
+/// Walks a PV line, analyzing tactics/strategy diffs at each half-move checkpoint.
+/// Walks at least `min_moves`, then continues until material stabilizes.
 fn analyze_checkpoints(
     pos: &Chess,
     uci_moves: &[String],
-    interval: usize,
     base_tactics: &[String],
     base_strategy: &[String],
+    min_moves: usize,
 ) -> Vec<Checkpoint> {
-    let steps = walk_pv(pos, uci_moves);
     let mut checkpoints = Vec::new();
+    let mut current = pos.clone();
 
     // Track the previous checkpoint's full analysis for diffing
     let mut prev_tactics: Vec<String> = base_tactics.to_vec();
     let mut prev_strategy: Vec<String> = base_strategy.to_vec();
+    let mut prev_material: Option<String> = None;
 
-    for (i, (move_san, checkpoint_pos)) in steps.iter().enumerate() {
+    for (i, uci_str) in uci_moves.iter().enumerate() {
         let half_move = i + 1;
-        let is_interval = half_move % interval == 0;
-        let is_last = half_move == steps.len();
-        if is_interval || is_last {
-            let tactics = detect_all_tactics(checkpoint_pos);
-            let strategy = analyze_all_strategy(checkpoint_pos);
 
-            let new_tactics = vec_added(&prev_tactics, &tactics);
-            let removed_tactics = vec_removed(&prev_tactics, &tactics);
-            let new_strategy = vec_added(&prev_strategy, &strategy);
-            let removed_strategy = vec_removed(&prev_strategy, &strategy);
+        let uci = match uci_str.parse::<UciMove>() {
+            Ok(u) => u,
+            Err(_) => break,
+        };
 
-            checkpoints.push(Checkpoint {
-                half_move,
-                move_san: move_san.clone(),
-                new_tactics,
-                removed_tactics,
-                new_strategy,
-                removed_strategy,
-            });
+        // Capture from_sq and mover color before playing, for discovered attack detection
+        let from_sq_opt = match &uci {
+            UciMove::Normal { from, .. } => Some(*from),
+            _ => None,
+        };
+        let mover_color = current.turn();
+        let board_before = current.board().clone();
 
-            // Update previous for next checkpoint
-            prev_tactics = tactics;
-            prev_strategy = strategy;
+        let m = match uci.to_move(&current) {
+            Ok(m) => m,
+            Err(_) => break,
+        };
+        let move_san = SanPlus::from_move_and_play_unchecked(&mut current, m).to_string();
+
+        let material = analyze_material(&current);
+        let tactics = detect_all_tactics(&current);
+        let strategy = analyze_all_strategy(&current);
+
+        let mut new_tactics = vec_added(&prev_tactics, &tactics);
+        let removed_tactics = vec_removed(&prev_tactics, &tactics);
+        let new_strategy = vec_added(&prev_strategy, &strategy);
+        let removed_strategy = vec_removed(&prev_strategy, &strategy);
+
+        // Append discovered attacks/checks for this specific move directly into
+        // new_tactics. Intentionally NOT added to `prev_tactics` so they don't
+        // appear as "removed" in the next checkpoint.
+        if let Some(from_sq) = from_sq_opt {
+            detect_discovered_attack(
+                &board_before,
+                current.board(),
+                mover_color,
+                from_sq,
+                &mut new_tactics,
+            );
+        }
+
+        // Check if material has stabilized (same as previous checkpoint)
+        let material_stable = prev_material.as_ref() == Some(&material);
+
+        checkpoints.push(Checkpoint {
+            half_move,
+            move_san,
+            material: material.clone(),
+            new_tactics,
+            removed_tactics,
+            new_strategy,
+            removed_strategy,
+        });
+
+        // Update previous for next checkpoint
+        // (discovered attack findings intentionally excluded from prev_tactics)
+        prev_tactics = tactics;
+        prev_strategy = strategy;
+        prev_material = Some(material);
+
+        // Stop once we've reached the minimum and material has stabilized,
+        // or when we hit the hard cap to avoid walking long tactical PV lines.
+        let max_moves = min_moves + 4;
+        if (half_move >= min_moves && material_stable) || half_move >= max_moves {
+            break;
         }
     }
 
@@ -166,6 +189,7 @@ fn analyze_checkpoints(
 
 /// Compares the engine's best line and the user's line by walking both
 /// and analyzing tactics/strategy diffs at each half-move checkpoint.
+/// Walks at least 6 half-moves, then continues until material stabilizes.
 /// `base_tactics` and `base_strategy` come from the original position's analysis.
 pub fn compare_lines(
     pos: &Chess,
@@ -174,9 +198,9 @@ pub fn compare_lines(
     base_tactics: &[String],
     base_strategy: &[String],
 ) -> LineComparison {
-    let interval = 1;
-    let engine_checkpoints = analyze_checkpoints(pos, engine_uci, interval, base_tactics, base_strategy);
-    let user_checkpoints = analyze_checkpoints(pos, user_uci, interval, base_tactics, base_strategy);
+    let min_moves = 6;
+    let engine_checkpoints = analyze_checkpoints(pos, engine_uci, base_tactics, base_strategy, min_moves);
+    let user_checkpoints = analyze_checkpoints(pos, user_uci, base_tactics, base_strategy, min_moves);
     LineComparison {
         engine_checkpoints,
         user_checkpoints,
@@ -248,7 +272,7 @@ pub fn generate_comparison_text(
         text.push_str("\nThe user's move is nearly as good as the engine's best.\n");
     } else if diff > 0 {
         text.push_str(&format!(
-            "\nThe user's move loses {:.2} centipawns compared to the engine's best.\n",
+            "\nThe user's move loses approximately {:.2} pawns worth of evaluation compared to the engine's best.\n",
             diff as f64 / 100.0
         ));
     } else {
@@ -257,47 +281,47 @@ pub fn generate_comparison_text(
 
     // Checkpoint-by-checkpoint comparison along both lines (diffs only)
     if let Some(cmp) = line_comparison {
-        text.push_str("\n=== Engine Line Checkpoints (changes from previous) ===\n");
+        text.push_str("\n=== Engine Line Checkpoints ===\n");
         for cp in &cmp.engine_checkpoints {
             let has_changes = !cp.new_tactics.is_empty() || !cp.removed_tactics.is_empty()
                 || !cp.new_strategy.is_empty() || !cp.removed_strategy.is_empty();
             text.push_str(&format!("\nAfter {}:\n", cp.move_san));
             if !has_changes {
-                text.push_str("  (no changes)\n");
+                text.push_str("  No tactical or strategic changes.\n");
             }
             for t in &cp.new_tactics {
-                text.push_str(&format!("  [+tactic] {}\n", t));
+                text.push_str(&format!("  New tactic: {}\n", t));
             }
             for t in &cp.removed_tactics {
-                text.push_str(&format!("  [-tactic] {}\n", t));
+                text.push_str(&format!("  No longer on the board: {}\n", t));
             }
             for s in &cp.new_strategy {
-                text.push_str(&format!("  [+strategy] {}\n", s));
+                text.push_str(&format!("  New observation: {}\n", s));
             }
             for s in &cp.removed_strategy {
-                text.push_str(&format!("  [-strategy] {}\n", s));
+                text.push_str(&format!("  No longer relevant: {}\n", s));
             }
         }
 
-        text.push_str("\n=== User Line Checkpoints (changes from previous) ===\n");
+        text.push_str("\n=== User Line Checkpoints ===\n");
         for cp in &cmp.user_checkpoints {
             let has_changes = !cp.new_tactics.is_empty() || !cp.removed_tactics.is_empty()
                 || !cp.new_strategy.is_empty() || !cp.removed_strategy.is_empty();
             text.push_str(&format!("\nAfter {}:\n", cp.move_san));
             if !has_changes {
-                text.push_str("  (no changes)\n");
+                text.push_str("  No tactical or strategic changes.\n");
             }
             for t in &cp.new_tactics {
-                text.push_str(&format!("  [+tactic] {}\n", t));
+                text.push_str(&format!("  New tactic: {}\n", t));
             }
             for t in &cp.removed_tactics {
-                text.push_str(&format!("  [-tactic] {}\n", t));
+                text.push_str(&format!("  No longer on the board: {}\n", t));
             }
             for s in &cp.new_strategy {
-                text.push_str(&format!("  [+strategy] {}\n", s));
+                text.push_str(&format!("  New observation: {}\n", s));
             }
             for s in &cp.removed_strategy {
-                text.push_str(&format!("  [-strategy] {}\n", s));
+                text.push_str(&format!("  No longer relevant: {}\n", s));
             }
         }
     }

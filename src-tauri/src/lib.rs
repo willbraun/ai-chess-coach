@@ -5,7 +5,7 @@ mod strategy;
 mod tactics;
 
 use serde::Serialize;
-use shakmaty::{fen::Fen, CastlingMode, Chess};
+use shakmaty::{fen::Fen, CastlingMode, Chess, Color, Position};
 use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
@@ -91,7 +91,16 @@ async fn analyze_position(
     let output = read_until(&mut engine.rx, "bestmove").await?;
     // Keep raw UCI data so we can walk the engine's best line later
     let (_, engine_raw_lines) = parse_raw(&output);
-    let (best_move, lines) = parse_analysis(&output, &pos)?;
+    let (best_move, mut lines) = parse_analysis(&output, &pos)?;
+
+    // Stockfish scores are from side-to-move perspective.
+    // Normalize all scores to White's perspective.
+    if pos.turn() == Color::Black {
+        for line in &mut lines {
+            line.score_cp = -line.score_cp;
+            line.score = format_score(line.score_cp);
+        }
+    }
 
     // --- Analysis 2 (optional): Best continuation after the user's move ---
     let (user_line, user_raw_uci) = if let Some(ref uci_str) = user_move {
@@ -125,7 +134,15 @@ async fn analyze_position(
             full_uci.extend(raw.moves.iter().cloned());
 
             let san = uci_moves_to_san(&pos, &full_uci).unwrap_or_default();
-            let score_cp = -raw.score_cp;
+            // Stockfish reports from side-to-move after the user's move.
+            // Normalize to White's perspective.
+            let score_cp = if pos.turn() == Color::White {
+                // User played as White, Stockfish now reports for Black → negate
+                -raw.score_cp
+            } else {
+                // User played as Black, Stockfish now reports for White → keep as-is
+                raw.score_cp
+            };
             let score = format_score(score_cp);
 
             (Some(PvLine {

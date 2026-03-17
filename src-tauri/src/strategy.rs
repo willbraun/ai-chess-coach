@@ -11,9 +11,6 @@ pub fn analyze_material(pos: &Chess) -> String {
     let black_material = count_material(board, Color::Black);
     let diff = white_material - black_material;
 
-    let white_bishops = (board.by_color(Color::White) & board.by_role(Role::Bishop)).count();
-    let black_bishops = (board.by_color(Color::Black) & board.by_role(Role::Bishop)).count();
-
     let mut parts = Vec::new();
 
     if diff == 0 {
@@ -25,24 +22,16 @@ pub fn analyze_material(pos: &Chess) -> String {
             ("Black", -diff)
         };
         parts.push(format!(
-            "{} is up material ({:+.2})",
+            "{} is up material (+{})",
             side,
-            advantage as f64 / 100.0
+            advantage
         ));
-    }
-
-    // Note bishop pair advantage
-    if white_bishops >= 2 {
-        parts.push("White has the bishop pair".to_string());
-    }
-    if black_bishops >= 2 {
-        parts.push("Black has the bishop pair".to_string());
     }
 
     parts.join(". ")
 }
 
-/// Counts total material value for one side (in centipawns).
+/// Counts total material value for one side.
 fn count_material(board: &shakmaty::Board, color: Color) -> i32 {
     let pieces = board.by_color(color);
     let mut total = 0;
