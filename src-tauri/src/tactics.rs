@@ -1,4 +1,23 @@
+use serde::Serialize;
 use shakmaty::{attacks, Bitboard, Board, Chess, Color, Position, Role, Square};
+
+// Priority tiers for LLM prompt filtering
+pub const CRITICAL: u8 = 1; // Directly wins/loses material or forces mate
+pub const IMPORTANT: u8 = 2; // Creates winning pressure or structural advantage
+pub const POSITIONAL: u8 = 3; // General quality observations
+
+/// A tactical or strategic finding with a priority tier for LLM filtering.
+#[derive(Serialize, Clone)]
+pub struct Finding {
+    pub text: String,
+    pub priority: u8,
+}
+
+impl Finding {
+    pub fn new(priority: u8, text: String) -> Self {
+        Self { text, priority }
+    }
+}
 
 // Standard piece values
 pub const PAWN_VALUE: i32 = 1;
@@ -94,9 +113,53 @@ fn attackers_to(board: &Board, sq: Square, by_color: Color) -> Bitboard {
     knights | kings | diag | straight | pawns
 }
 
+/// Returns true if `piece_sq` (belonging to `piece_color`) is absolutely pinned
+/// such that it cannot legally capture at `target_sq`.
+/// A piece is absolutely pinned when removing it from the board exposes its king
+/// to attack by an enemy slider, AND `target_sq` is not on the pin ray.
+fn is_pinned_against_capture(
+    board: &Board,
+    piece_sq: Square,
+    piece_color: Color,
+    target_sq: Square,
+) -> bool {
+    let king_sq = match (board.by_color(piece_color) & board.by_role(Role::King))
+        .into_iter()
+        .next()
+    {
+        Some(sq) => sq,
+        None => return false,
+    };
+
+    let enemy = board.by_color(!piece_color);
+    // Remove the piece and see if the king becomes attacked by a slider
+    let occupied_without = board.occupied() & !Bitboard::from(piece_sq);
+
+    let diag_sliders = (board.by_role(Role::Bishop) | board.by_role(Role::Queen)) & enemy;
+    let straight_sliders = (board.by_role(Role::Rook) | board.by_role(Role::Queen)) & enemy;
+
+    let king_diag = attacks::bishop_attacks(king_sq, occupied_without);
+    let king_straight = attacks::rook_attacks(king_sq, occupied_without);
+
+    let pinner_sq = (king_diag & diag_sliders)
+        .into_iter()
+        .next()
+        .or_else(|| (king_straight & straight_sliders).into_iter().next());
+
+    match pinner_sq {
+        None => false, // not pinned at all
+        Some(pinner) => {
+            // Pinned. The only legal moves are along the pin ray (king..pinner inclusive).
+            // If target_sq is the pinner or between king and pinner, the capture is legal.
+            target_sq != pinner && !attacks::between(king_sq, pinner).contains(target_sq)
+        }
+    }
+}
+
 /// Detects hanging pieces for a single color: pieces attacked by the opponent
 /// but not defended by their own side.
-fn detect_hanging(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_hanging(pos: &Chess, color: Color, findings: &mut Vec<Finding>) {
+    let board = pos.board();
     let pieces = board.by_color(color) & !board.by_role(Role::King);
     let opponent = !color;
     for sq in pieces {
@@ -106,13 +169,18 @@ fn detect_hanging(board: &Board, color: Color, findings: &mut Vec<String>) {
         };
         let attackers = attackers_to(board, sq, opponent);
         let defenders = attackers_to(board, sq, color);
-        if !attackers.is_empty() && defenders.is_empty() {
-            findings.push(format!(
-                "{}'s {} on {} is hanging — attacked but undefended",
+        // Filter out attackers that are absolutely pinned and cannot legally capture here
+        let effective_attackers = attackers
+            .into_iter()
+            .filter(|&attacker_sq| !is_pinned_against_capture(board, attacker_sq, opponent, sq))
+            .count();
+        if effective_attackers > 0 && defenders.is_empty() {
+            findings.push(Finding::new(CRITICAL, format!(
+                "{}'s {} on {} is hanging",
                 color_name(color),
                 piece_name(role),
                 sq
-            ));
+            )));
         }
     }
 }
@@ -120,7 +188,7 @@ fn detect_hanging(board: &Board, color: Color, findings: &mut Vec<String>) {
 /// Detects forks: a piece attacking 2+ enemy pieces where material can be won.
 /// A fork is meaningful when the forking piece is worth less than the most
 /// valuable attacked piece, or the attacked pieces can't all escape.
-fn detect_forks(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_forks(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let occupied = board.occupied();
     let our_pieces = board.by_color(color);
     let their_pieces = board.by_color(!color);
@@ -147,28 +215,17 @@ fn detect_forks(board: &Board, color: Color, findings: &mut Vec<String>) {
         if attacked_enemies.count() >= 2 {
             let forker_value = piece_value(role);
 
-            // If the king is among the attacked pieces, the opponent must deal
-            // with check first, making all other targets effectively capturable.
-            let king_is_target = !(attacked_enemies & board.by_role(Role::King)).is_empty();
-
             let mut attacked_targets: Vec<(i32, String)> = Vec::new();
 
             for target_sq in attacked_enemies {
                 if let Some(target_role) = board.role_at(target_sq) {
-                    // The king is always a valid fork target (high sort value to list first)
+                    // The king is always a valid fork target (opponent must deal with check)
                     if target_role == Role::King {
                         attacked_targets.push((1000, format!("king on {}", target_sq)));
                         continue;
                     }
-                    // If the king is also forked, the opponent must deal with check,
-                    // so every other target is effectively free to capture.
-                    if king_is_target {
-                        attacked_targets.push((piece_value(target_role), format!("{} on {}", piece_name(target_role), target_sq)));
-                        continue;
-                    }
-                    // Otherwise, only include targets where capturing wins material:
-                    // undefended, worth more than the forker, or overwhelmed (more
-                    // attackers than defenders).
+                    // For non-king targets, only include where capturing wins material:
+                    // undefended, worth more than the forker, or overwhelmed.
                     let target_defenders = attackers_to(board, target_sq, !color);
                     let our_attackers = attackers_to(board, target_sq, color);
                     let is_undefended = target_defenders.is_empty();
@@ -185,13 +242,13 @@ fn detect_forks(board: &Board, color: Color, findings: &mut Vec<String>) {
             let attacked_names: Vec<String> = attacked_targets.into_iter().map(|(_, name)| name).collect();
 
             if attacked_names.len() >= 2 {
-                findings.push(format!(
+                findings.push(Finding::new(CRITICAL, format!(
                     "{}'s {} on {} forks {}",
                     side,
                     piece_name(role),
                     sq,
                     attacked_names.join(" and ")
-                ));
+                )));
             }
         }
     }
@@ -200,7 +257,7 @@ fn detect_forks(board: &Board, color: Color, findings: &mut Vec<String>) {
 /// Detects pins: a sliding piece pins one of the opponent's pieces to a more
 /// valuable piece behind it on the same ray.
 /// Absolute pins (to the king) and relative pins (to the queen or rook) are detected.
-fn detect_pins(board: &Board, us: Color, them: Color, findings: &mut Vec<String>) {
+fn detect_pins(board: &Board, us: Color, them: Color, findings: &mut Vec<Finding>) {
     let occupied = board.occupied();
     let our_pieces = board.by_color(us);
     let their_pieces = board.by_color(them);
@@ -233,16 +290,22 @@ fn detect_pins(board: &Board, us: Color, them: Color, findings: &mut Vec<String>
                 if our_pieces.contains(blocker_sq) {
                     if let Some(blocker_role) = board.role_at(blocker_sq) {
                         let target_role = board.role_at(target_sq).unwrap_or(Role::Pawn);
-                        // Only report if the pinned piece is worth less than the piece behind it
-                        if piece_value(blocker_role) < piece_value(target_role)
-                            || target_role == Role::King
+                        let target_undefended = target_role != Role::King
+                            && attackers_to(board, target_sq, us).is_empty();
+                        // Report if: king (absolute pin), attacker can profitably/evenly
+                        // capture the pinned piece, attacker profits from capturing the
+                        // exposed target, or the exposed target is undefended.
+                        if target_role == Role::King
+                            || piece_value(attacker_role) <= piece_value(blocker_role)
+                            || piece_value(attacker_role) < piece_value(target_role)
+                            || target_undefended
                         {
                             let target_name = if target_role == Role::King {
                                 "the king".to_string()
                             } else {
                                 format!("{} on {}", piece_name(target_role), target_sq)
                             };
-                            findings.push(format!(
+                            findings.push(Finding::new(CRITICAL, format!(
                                 "{}'s {} on {} is pinned to {} by {} on {}",
                                 pinned_side,
                                 piece_name(blocker_role),
@@ -250,7 +313,7 @@ fn detect_pins(board: &Board, us: Color, them: Color, findings: &mut Vec<String>
                                 target_name,
                                 piece_name(attacker_role),
                                 attacker_sq
-                            ));
+                            )));
                         }
                     }
                 }
@@ -275,15 +338,19 @@ fn detect_pins(board: &Board, us: Color, them: Color, findings: &mut Vec<String>
                 if our_pieces.contains(blocker_sq) {
                     if let Some(blocker_role) = board.role_at(blocker_sq) {
                         let target_role = board.role_at(target_sq).unwrap_or(Role::Pawn);
-                        if piece_value(blocker_role) < piece_value(target_role)
-                            || target_role == Role::King
+                        let target_undefended = target_role != Role::King
+                            && attackers_to(board, target_sq, us).is_empty();
+                        if target_role == Role::King
+                            || piece_value(attacker_role) <= piece_value(blocker_role)
+                            || piece_value(attacker_role) < piece_value(target_role)
+                            || target_undefended
                         {
                             let target_name = if target_role == Role::King {
                                 "the king".to_string()
                             } else {
                                 format!("{} on {}", piece_name(target_role), target_sq)
                             };
-                            findings.push(format!(
+                            findings.push(Finding::new(CRITICAL, format!(
                                 "{}'s {} on {} is pinned to {} by {} on {}",
                                 pinned_side,
                                 piece_name(blocker_role),
@@ -291,7 +358,7 @@ fn detect_pins(board: &Board, us: Color, them: Color, findings: &mut Vec<String>
                                 target_name,
                                 piece_name(attacker_role),
                                 attacker_sq
-                            ));
+                            )));
                         }
                     }
                 }
@@ -303,7 +370,7 @@ fn detect_pins(board: &Board, us: Color, them: Color, findings: &mut Vec<String>
 /// Detects skewers: a sliding piece attacks a valuable piece, and behind it
 /// on the same ray sits a less valuable piece that will be captured if the
 /// front piece moves.
-fn detect_skewers(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_skewers(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let occupied = board.occupied();
     let our_pieces = board.by_color(color);
     let their_pieces = board.by_color(!color);
@@ -333,7 +400,7 @@ fn check_skewer_ray(
     their_pieces: Bitboard,
     occupied: Bitboard,
     diagonal: bool,
-    findings: &mut Vec<String>,
+    findings: &mut Vec<Finding>,
 ) {
     let attack_bb = if diagonal {
         attacks::bishop_attacks(attacker_sq, occupied)
@@ -398,7 +465,7 @@ fn check_skewer_ray(
                 // Skewer: front piece is more valuable (or equal) — it must move,
                 // exposing the back piece
                 if piece_value(front_role) >= piece_value(back_role) {
-                    findings.push(format!(
+                    findings.push(Finding::new(CRITICAL, format!(
                         "{} on {} skewers {} on {} through to {} on {}",
                         piece_name(attacker_role),
                         attacker_sq,
@@ -406,7 +473,7 @@ fn check_skewer_ray(
                         front_sq,
                         piece_name(back_role),
                         back_sq
-                    ));
+                    )));
                 }
             }
         }
@@ -422,7 +489,7 @@ pub fn detect_discovered_attack(
     board_after: &Board,
     mover_color: Color,
     from_sq: Square,
-    findings: &mut Vec<String>,
+    findings: &mut Vec<Finding>,
 ) {
     let occupied_before = board_before.occupied();
     let occupied_after = board_after.occupied();
@@ -491,7 +558,7 @@ pub fn detect_discovered_attack(
                 "a discovered attack"
             };
 
-            findings.push(format!(
+            findings.push(Finding::new(CRITICAL, format!(
                 "{}'s {} on {} reveals {} by {} on {} targeting {} on {}",
                 color_name(mover_color),
                 mover_name,
@@ -501,14 +568,14 @@ pub fn detect_discovered_attack(
                 slider_sq,
                 piece_name(target_role),
                 target_sq,
-            ));
+            )));
         }
     }
 }
 
 /// Detects double check: the side to move is in check from 2+ pieces at once.
 /// In double check, the only legal response is a king move.
-fn detect_double_check(pos: &Chess, findings: &mut Vec<String>) {
+fn detect_double_check(pos: &Chess, findings: &mut Vec<Finding>) {
     let checkers = pos.checkers();
     if checkers.count() >= 2 {
         let board = pos.board();
@@ -519,23 +586,72 @@ fn detect_double_check(pos: &Chess, findings: &mut Vec<String>) {
                 board.role_at(sq).map(|role| format!("{} on {}", piece_name(role), sq))
             })
             .collect();
-        findings.push(format!(
+        findings.push(Finding::new(CRITICAL, format!(
             "{} is in double check from {}",
             color_name(checked_color),
             checker_names.join(" and ")
-        ));
+        )));
     }
 }
 
 /// Detects trapped pieces: minor pieces or above (value >= 3) that have no
 /// safe square to move to. Every destination is either blocked by a friendly
 /// piece or attacked by a cheaper enemy piece.
-fn detect_trapped_piece(board: &Board, color: Color, findings: &mut Vec<String>) {
+/// Returns true if the piece on `sq` (belonging to `color`) has no safe squares
+/// to move to AND is currently being attacked — i.e. it is trapped.
+fn is_piece_trapped(board: &Board, sq: Square, color: Color) -> bool {
     let occupied = board.occupied();
     let our_pieces = board.by_color(color);
     let their_pieces = board.by_color(!color);
 
-    // Only check pieces worth >= knight (skip pawns and kings)
+    let role = match board.role_at(sq) {
+        Some(r) => r,
+        None => return false,
+    };
+    let value = piece_value(role);
+
+    let move_squares = match role {
+        Role::Knight => attacks::knight_attacks(sq),
+        Role::Bishop => attacks::bishop_attacks(sq, occupied),
+        Role::Rook => attacks::rook_attacks(sq, occupied),
+        Role::Queen => attacks::queen_attacks(sq, occupied),
+        _ => return false,
+    };
+
+    let destinations = move_squares & !our_pieces;
+    if destinations.is_empty() {
+        return false;
+    }
+
+    for dest in destinations {
+        let enemy_attackers = attackers_to(board, dest, !color);
+        if enemy_attackers.is_empty() {
+            return false; // safe square exists
+        }
+        let min_attacker_value = enemy_attackers
+            .into_iter()
+            .filter_map(|a| board.role_at(a))
+            .map(piece_value)
+            .min()
+            .unwrap_or(0);
+        if min_attacker_value >= value {
+            return false; // trade is acceptable
+        }
+        if their_pieces.contains(dest) {
+            if let Some(cap_role) = board.role_at(dest) {
+                if piece_value(cap_role) >= value {
+                    return false; // capture offsets loss
+                }
+            }
+        }
+    }
+
+    // No safe square — only report as trapped if it's also under attack
+    !attackers_to(board, sq, !color).is_empty()
+}
+
+fn detect_trapped_piece(board: &Board, color: Color, findings: &mut Vec<Finding>) {
+    let our_pieces = board.by_color(color);
     let candidates = our_pieces & !board.by_role(Role::King) & !board.by_role(Role::Pawn);
 
     for sq in candidates {
@@ -543,74 +659,13 @@ fn detect_trapped_piece(board: &Board, color: Color, findings: &mut Vec<String>)
             Some(r) => r,
             None => continue,
         };
-        let value = piece_value(role);
-
-        // Compute pseudo-legal move squares for this piece
-        let move_squares = match role {
-            Role::Knight => attacks::knight_attacks(sq),
-            Role::Bishop => attacks::bishop_attacks(sq, occupied),
-            Role::Rook => attacks::rook_attacks(sq, occupied),
-            Role::Queen => attacks::queen_attacks(sq, occupied),
-            _ => continue,
-        };
-
-        // Remove squares occupied by own pieces (can't move there)
-        let destinations = move_squares & !our_pieces;
-
-        // If piece has no destinations at all, it's boxed in but not necessarily
-        // under threat — skip unless it's also attacked
-        if destinations.is_empty() {
-            continue;
-        }
-
-        // Check if every destination loses material
-        let mut has_safe_square = false;
-        for dest in destinations {
-            let enemy_attackers = attackers_to(board, dest, !color);
-
-            // No enemy attacks this square — safe to move there
-            if enemy_attackers.is_empty() {
-                has_safe_square = true;
-                break;
-            }
-
-            // Find cheapest enemy attacker on this destination
-            let min_attacker_value = enemy_attackers
-                .into_iter()
-                .filter_map(|a| board.role_at(a))
-                .map(piece_value)
-                .min()
-                .unwrap_or(0);
-
-            // If cheapest attacker costs >= this piece, trading is acceptable
-            if min_attacker_value >= value {
-                has_safe_square = true;
-                break;
-            }
-
-            // If we capture an enemy piece worth >= our piece, that offsets being recaptured
-            if their_pieces.contains(dest) {
-                if let Some(cap_role) = board.role_at(dest) {
-                    if piece_value(cap_role) >= value {
-                        has_safe_square = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if !has_safe_square {
-            // Only report if the piece is actually being attacked
-            let attackers = attackers_to(board, sq, !color);
-            if attackers.is_empty() {
-                continue;
-            }
-            findings.push(format!(
+        if is_piece_trapped(board, sq, color) {
+            findings.push(Finding::new(IMPORTANT, format!(
                 "{}'s {} on {} is trapped — no safe squares",
                 color_name(color),
                 piece_name(role),
                 sq
-            ));
+            )));
         }
     }
 }
@@ -618,7 +673,7 @@ fn detect_trapped_piece(board: &Board, color: Color, findings: &mut Vec<String>)
 /// Detects x-ray attacks: a friendly slider attacks through one of our own
 /// pieces to reach a valuable enemy piece behind it. If the friendly blocker
 /// moves, the enemy piece becomes directly attacked.
-fn detect_xray_attack(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_xray_attack(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let occupied = board.occupied();
     let our_pieces = board.by_color(color);
     let their_pieces = board.by_color(!color);
@@ -658,7 +713,7 @@ fn detect_xray_attack(board: &Board, color: Color, findings: &mut Vec<String>) {
                 if let Some(target_role) = board.role_at(target_sq) {
                     // Only report if target piece is valuable (>= bishop)
                     if piece_value(target_role) >= BISHOP_VALUE {
-                        findings.push(format!(
+                        findings.push(Finding::new(IMPORTANT, format!(
                             "{}'s {} on {} x-rays through {} on {} to {} on {}",
                             side,
                             piece_name(attacker_role),
@@ -667,7 +722,7 @@ fn detect_xray_attack(board: &Board, color: Color, findings: &mut Vec<String>) {
                             blocker_sq,
                             piece_name(target_role),
                             target_sq
-                        ));
+                        )));
                     }
                 }
             }
@@ -698,7 +753,7 @@ fn detect_xray_attack(board: &Board, color: Color, findings: &mut Vec<String>) {
                 }
                 if let Some(target_role) = board.role_at(target_sq) {
                     if piece_value(target_role) >= BISHOP_VALUE {
-                        findings.push(format!(
+                        findings.push(Finding::new(IMPORTANT, format!(
                             "{}'s {} on {} x-rays through {} on {} to {} on {}",
                             side,
                             piece_name(attacker_role),
@@ -707,7 +762,7 @@ fn detect_xray_attack(board: &Board, color: Color, findings: &mut Vec<String>) {
                             blocker_sq,
                             piece_name(target_role),
                             target_sq
-                        ));
+                        )));
                     }
                 }
             }
@@ -717,7 +772,7 @@ fn detect_xray_attack(board: &Board, color: Color, findings: &mut Vec<String>) {
 
 /// Detects "removing the defender" patterns: capturing an enemy defender
 /// profitably would leave a more valuable enemy piece undefended.
-fn detect_removing_the_defender(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_removing_the_defender(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let their_pieces = board.by_color(!color);
 
     // Look at each enemy piece worth >= knight that we attack
@@ -782,14 +837,14 @@ fn detect_removing_the_defender(board: &Board, color: Color, findings: &mut Vec<
                 // After removing this defender, would the target be vulnerable?
                 let remaining = defenders.count() - 1;
                 if remaining == 0 || remaining < our_attackers_on_target.count() {
-                    findings.push(format!(
+                    findings.push(Finding::new(IMPORTANT, format!(
                         "Capturing {}'s {} on {} removes defense of the {} on {}",
                         color_name(!color),
                         piece_name(def_role),
                         def_sq,
                         piece_name(target_role),
                         target_sq
-                    ));
+                    )));
                 }
             }
         }
@@ -799,7 +854,7 @@ fn detect_removing_the_defender(board: &Board, color: Color, findings: &mut Vec<
 /// Detects deflection/overloaded defender patterns: an enemy piece is the sole
 /// defender of 2+ valuable pieces. Forcing it to move (deflection) would leave
 /// at least one of those pieces undefended.
-fn detect_deflection(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_deflection(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let occupied = board.occupied();
     let their_pieces = board.by_color(!color);
     let their_non_king = their_pieces & !board.by_role(Role::King);
@@ -853,13 +908,13 @@ fn detect_deflection(board: &Board, color: Color, findings: &mut Vec<String>) {
                 .iter()
                 .map(|(sq, role)| format!("{} on {}", piece_name(*role), sq))
                 .collect();
-            findings.push(format!(
+            findings.push(Finding::new(IMPORTANT, format!(
                 "{}'s {} on {} is the sole defender of {} — vulnerable to deflection",
                 color_name(!color),
                 piece_name(def_role),
                 def_sq,
                 duty_names.join(" and ")
-            ));
+            )));
         }
     }
 }
@@ -867,7 +922,7 @@ fn detect_deflection(board: &Board, color: Color, findings: &mut Vec<String>) {
 /// Detects interference opportunities: a square exists on an enemy slider's
 /// defensive ray where one of our pieces could move, blocking that defense
 /// and leaving the defended piece unprotected.
-fn detect_interference(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_interference(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let occupied = board.occupied();
     let their_pieces = board.by_color(!color);
 
@@ -916,14 +971,14 @@ fn detect_interference(board: &Board, color: Color, findings: &mut Vec<String>) 
                 // Can any of our pieces move to this blocking square?
                 let our_pieces_reaching = attackers_to(board, block_sq, color);
                 if !our_pieces_reaching.is_empty() {
-                    findings.push(format!(
+                    findings.push(Finding::new(IMPORTANT, format!(
                         "A piece on {} would block {}'s {} from defending the {} on {}",
                         block_sq,
                         color_name(!color),
                         piece_name(slider_role),
                         piece_name(defended_role),
                         defended_sq
-                    ));
+                    )));
                     break; // One finding per defensive ray
                 }
             }
@@ -965,14 +1020,14 @@ fn detect_interference(board: &Board, color: Color, findings: &mut Vec<String>) 
                 }
                 let our_pieces_reaching = attackers_to(board, block_sq, color);
                 if !our_pieces_reaching.is_empty() {
-                    findings.push(format!(
+                    findings.push(Finding::new(IMPORTANT, format!(
                         "A piece on {} would block {}'s {} from defending the {} on {}",
                         block_sq,
                         color_name(!color),
                         piece_name(slider_role),
                         piece_name(defended_role),
                         defended_sq
-                    ));
+                    )));
                     break;
                 }
             }
@@ -983,7 +1038,7 @@ fn detect_interference(board: &Board, color: Color, findings: &mut Vec<String>) 
 /// Detects weak back rank: a king on its back rank with no escape squares
 /// (blocked by own pieces or attacked by enemy) while the opponent has
 /// heavy pieces (rook/queen) that could exploit the weakness.
-fn detect_weak_back_rank(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_weak_back_rank(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let king_sq = match (board.by_color(color) & board.by_role(Role::King))
         .into_iter()
         .next()
@@ -1038,15 +1093,15 @@ fn detect_weak_back_rank(board: &Board, color: Color, findings: &mut Vec<String>
         return;
     }
 
-    findings.push(format!(
+    findings.push(Finding::new(CRITICAL, format!(
         "{}'s king has a weak back rank — no escape squares",
         color_name(color)
-    ));
+    )));
 }
 
 /// Detects batteries: two same-color sliders lined up on the same file, rank,
 /// or diagonal with no pieces between them, creating combined firepower.
-fn detect_battery(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_battery(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let occupied = board.occupied();
     let our_pieces = board.by_color(color);
     let side = color_name(color);
@@ -1075,14 +1130,14 @@ fn detect_battery(board: &Board, color: Color, findings: &mut Vec<String>) {
 
             let role1 = board.role_at(sq1).unwrap();
             let role2 = board.role_at(sq2).unwrap();
-            findings.push(format!(
+            findings.push(Finding::new(IMPORTANT, format!(
                 "{}'s {} on {} and {} on {} form a battery",
                 side,
                 piece_name(role1),
                 sq1,
                 piece_name(role2),
                 sq2
-            ));
+            )));
         }
     }
 
@@ -1114,14 +1169,14 @@ fn detect_battery(board: &Board, color: Color, findings: &mut Vec<String>) {
                 continue;
             }
 
-            findings.push(format!(
+            findings.push(Finding::new(IMPORTANT, format!(
                 "{}'s {} on {} and {} on {} form a battery",
                 side,
                 piece_name(role1),
                 sq1,
                 piece_name(role2),
                 sq2
-            ));
+            )));
         }
     }
 }
@@ -1129,7 +1184,7 @@ fn detect_battery(board: &Board, color: Color, findings: &mut Vec<String>) {
 /// Detects desperado situations: a piece that is doomed (hanging or profitably
 /// attacked by a cheaper piece) but can capture an enemy piece before being
 /// taken, recovering some material.
-fn detect_desperado(board: &Board, color: Color, findings: &mut Vec<String>) {
+fn detect_desperado(board: &Board, color: Color, findings: &mut Vec<Finding>) {
     let occupied = board.occupied();
     // Only check pieces worth >= knight (skip pawns and kings)
     let candidates =
@@ -1165,6 +1220,11 @@ fn detect_desperado(board: &Board, color: Color, findings: &mut Vec<String>) {
             continue;
         }
 
+        // Only report desperado if the piece is also trapped (no safe escape squares)
+        if !is_piece_trapped(board, sq, color) {
+            continue;
+        }
+
         // What enemy pieces can this doomed piece capture?
         let piece_attacks = match role {
             Role::Knight => attacks::knight_attacks(sq),
@@ -1186,31 +1246,68 @@ fn detect_desperado(board: &Board, color: Color, findings: &mut Vec<String>) {
             .max_by_key(|(_, r)| piece_value(*r));
 
         if let Some((cap_sq, cap_role)) = best_capture {
-            findings.push(format!(
+            findings.push(Finding::new(IMPORTANT, format!(
                 "{}'s {} on {} is under threat but can capture the {} on {} (desperado)",
                 color_name(color),
                 piece_name(role),
                 sq,
                 piece_name(cap_role),
                 cap_sq
-            ));
+            )));
         }
     }
 }
 
+/// Returns all pieces of `color` that are currently attacked by `!color`.
+/// Each finding describes the attacked piece and the cheapest (most threatening) attacker.
+/// Used in the PV walk to surface newly attacked pieces at each checkpoint.
+pub fn get_attacked_pieces(board: &Board, color: Color) -> Vec<Finding> {
+    let pieces = board.by_color(color) & !board.by_role(Role::King);
+    let mut result = Vec::new();
+    for sq in pieces {
+        let role = match board.role_at(sq) {
+            Some(r) => r,
+            None => continue,
+        };
+        let atk = attackers_to(board, sq, !color);
+        if atk.is_empty() {
+            continue;
+        }
+        // Show the cheapest attacker — it represents the most dangerous immediate capture
+        if let Some((atk_sq, atk_role)) = atk
+            .into_iter()
+            .filter_map(|a| board.role_at(a).map(|r| (a, r)))
+            .min_by_key(|(_, r)| piece_value(*r))
+        {
+            result.push(Finding::new(
+                POSITIONAL,
+                format!(
+                    "{}'s {} on {} attacks {} on {}",
+                    color_name(!color),
+                    piece_name(atk_role),
+                    atk_sq,
+                    piece_name(role),
+                    sq,
+                ),
+            ));
+        }
+    }
+    result
+}
+
 /// Detects stalemate: the side to move has no legal moves and is not in check.
-fn detect_stalemate(pos: &Chess, findings: &mut Vec<String>) {
+fn detect_stalemate(pos: &Chess, findings: &mut Vec<Finding>) {
     if !pos.is_check() && pos.legal_moves().is_empty() {
-        findings.push(format!(
+        findings.push(Finding::new(CRITICAL, format!(
             "{} is in stalemate — the game is a draw",
             color_name(pos.turn())
-        ));
+        )));
     }
 }
 
 /// Runs all tactical pattern detections on the current position.
-/// Returns a list of human-readable tactical findings.
-pub fn detect_all_tactics(pos: &Chess) -> Vec<String> {
+/// Returns a list of findings with priority tiers.
+pub fn detect_all_tactics(pos: &Chess) -> Vec<Finding> {
     let mut findings = Vec::new();
     let board = pos.board();
 
@@ -1220,7 +1317,7 @@ pub fn detect_all_tactics(pos: &Chess) -> Vec<String> {
 
     // Run all detections for both sides so we never miss patterns
     for &color in &[Color::White, Color::Black] {
-        detect_hanging(board, color, &mut findings);
+        detect_hanging(pos, color, &mut findings);
         detect_forks(board, color, &mut findings);
         detect_pins(board, color, !color, &mut findings);
         detect_skewers(board, color, &mut findings);

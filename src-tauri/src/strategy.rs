@@ -1,6 +1,6 @@
 use shakmaty::{attacks, Chess, Color, Position, Role, Square};
 
-use crate::tactics::piece_value;
+use crate::tactics::{piece_value, Finding, CRITICAL, IMPORTANT, POSITIONAL};
 
 /// Analyzes material balance for both sides.
 /// Returns a human-readable summary like "White is up a knight (+3.00)".
@@ -44,7 +44,7 @@ fn count_material(board: &shakmaty::Board, color: Color) -> i32 {
 }
 
 /// Analyzes pawn structure: doubled, isolated, and passed pawns.
-pub fn analyze_pawn_structure(pos: &Chess) -> Vec<String> {
+pub fn analyze_pawn_structure(pos: &Chess) -> Vec<Finding> {
     let mut findings = Vec::new();
     let board = pos.board();
 
@@ -68,10 +68,10 @@ pub fn analyze_pawn_structure(pos: &Chess) -> Vec<String> {
         for file in 0..8u32 {
             if file_counts[file as usize] >= 2 {
                 let file_char = (b'a' + file as u8) as char;
-                findings.push(format!(
+                findings.push(Finding::new(POSITIONAL, format!(
                     "{} has doubled pawns on the {}-file",
                     side, file_char
-                ));
+                )));
             }
         }
 
@@ -82,7 +82,7 @@ pub fn analyze_pawn_structure(pos: &Chess) -> Vec<String> {
                 || (file < 7 && file_counts[(file + 1) as usize] > 0);
 
             if !has_neighbor {
-                findings.push(format!("{} has an isolated pawn on {}", side, sq));
+                findings.push(Finding::new(POSITIONAL, format!("{} has an isolated pawn on {}", side, sq)));
             }
         }
 
@@ -125,10 +125,10 @@ pub fn analyze_pawn_structure(pos: &Chess) -> Vec<String> {
                     Color::Black => rank <= threshold,
                 };
                 if is_passed && is_advanced {
-                    findings.push(format!(
+                    findings.push(Finding::new(IMPORTANT, format!(
                         "{} has a passed pawn on {} (rank {})",
                         side, sq, rank_desc
-                    ));
+                    )));
                 }
             }
         }
@@ -138,7 +138,7 @@ pub fn analyze_pawn_structure(pos: &Chess) -> Vec<String> {
 }
 
 /// Analyzes king safety for both sides.
-pub fn analyze_king_safety(pos: &Chess) -> Vec<String> {
+pub fn analyze_king_safety(pos: &Chess) -> Vec<Finding> {
     let mut findings = Vec::new();
     let board = pos.board();
     let occupied = board.occupied();
@@ -188,10 +188,10 @@ pub fn analyze_king_safety(pos: &Chess) -> Vec<String> {
         let is_castled_position = is_on_back_rank && (king_file >= 6 || king_file <= 1);
 
         if is_castled_position && shield_count == 0 {
-            findings.push(format!(
+            findings.push(Finding::new(IMPORTANT, format!(
                 "{}'s king has no pawn shield — potentially unsafe",
                 side
-            ));
+            )));
         }
 
         // Count enemy attackers near king (within king's attack zone)
@@ -217,10 +217,10 @@ pub fn analyze_king_safety(pos: &Chess) -> Vec<String> {
         }
 
         if attacker_count >= 2 {
-            findings.push(format!(
+            findings.push(Finding::new(CRITICAL, format!(
                 "{}'s king is under pressure — {} enemy pieces attack the king zone",
                 side, attacker_count
-            ));
+            )));
         }
 
         // Check for open files near king
@@ -237,10 +237,10 @@ pub fn analyze_king_safety(pos: &Chess) -> Vec<String> {
             }
             if !has_pawn_on_file {
                 let file_char = (b'a' + f as u8) as char;
-                findings.push(format!(
+                findings.push(Finding::new(IMPORTANT, format!(
                     "Open {}-file near {}'s king",
                     file_char, side
-                ));
+                )));
             }
         }
     }
@@ -249,7 +249,7 @@ pub fn analyze_king_safety(pos: &Chess) -> Vec<String> {
 }
 
 /// Analyzes piece activity: centralized pieces, rooks on open files.
-pub fn analyze_piece_activity(pos: &Chess) -> Vec<String> {
+pub fn analyze_piece_activity(pos: &Chess) -> Vec<Finding> {
     let mut findings = Vec::new();
     let board = pos.board();
 
@@ -272,10 +272,10 @@ pub fn analyze_piece_activity(pos: &Chess) -> Vec<String> {
         let our_knights = board.by_color(color) & board.by_role(Role::Knight);
         for sq in our_knights {
             if central_squares.contains(&sq) {
-                findings.push(format!(
+                findings.push(Finding::new(POSITIONAL, format!(
                     "{} has a centralized knight on {}",
                     side, sq
-                ));
+                )));
             }
         }
 
@@ -293,11 +293,11 @@ pub fn analyze_piece_activity(pos: &Chess) -> Vec<String> {
                 }
             }
             if !file_has_pawn {
-                findings.push(format!(
+                findings.push(Finding::new(POSITIONAL, format!(
                     "{} has a rook on the open {}-file",
                     side,
                     (b'a' + file as u8) as char
-                ));
+                )));
             }
         }
 
@@ -316,18 +316,18 @@ pub fn analyze_piece_activity(pos: &Chess) -> Vec<String> {
             }
         }
         if undeveloped >= 2 {
-            findings.push(format!(
+            findings.push(Finding::new(POSITIONAL, format!(
                 "{} has {} undeveloped minor pieces",
                 side, undeveloped
-            ));
+            )));
         }
     }
 
     findings
 }
 
-/// Runs all strategic analyses and returns combined findings.
-pub fn analyze_all_strategy(pos: &Chess) -> Vec<String> {
+/// Runs all strategic analyses and returns combined findings with priority tiers.
+pub fn analyze_all_strategy(pos: &Chess) -> Vec<Finding> {
     let mut findings = Vec::new();
     findings.extend(analyze_pawn_structure(pos));
     findings.extend(analyze_king_safety(pos));

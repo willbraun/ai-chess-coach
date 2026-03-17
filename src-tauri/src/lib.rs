@@ -172,8 +172,8 @@ async fn analyze_position(
             &pos,
             &engine_raw_uci,
             &user_raw_uci,
-            &position_report.tactics,
-            &position_report.strategy,
+            &position_report.tactics_full,
+            &position_report.strategy_full,
         ))
     } else {
         None

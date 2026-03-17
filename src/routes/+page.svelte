@@ -8,10 +8,15 @@
 		moves: string;
 	}
 
+	interface Finding {
+		text: string;
+		priority: number;
+	}
+
 	interface PositionReport {
 		material: string;
-		tactics: string[];
-		strategy: string[];
+		tactics: Finding[];
+		strategy: Finding[];
 		summary: string;
 	}
 
@@ -19,10 +24,11 @@
 		half_move: number;
 		move_san: string;
 		material: string;
-		new_tactics: string[];
-		removed_tactics: string[];
-		new_strategy: string[];
-		removed_strategy: string[];
+		new_tactics: Finding[];
+		removed_tactics: Finding[];
+		new_strategy: Finding[];
+		removed_strategy: Finding[];
+		newly_attacked: Finding[];
 	}
 
 	interface LineComparison {
@@ -128,8 +134,8 @@
 				{#if result.position_report.tactics.length > 0}
 					<h4>Tactics</h4>
 					<ul class="findings">
-						{#each result.position_report.tactics as item (item)}
-							<li>{item}</li>
+						{#each result.position_report.tactics as item (item.text)}
+							<li class:critical={item.priority === 1}>{item.text}</li>
 						{/each}
 					</ul>
 				{/if}
@@ -137,8 +143,8 @@
 				{#if result.position_report.strategy.length > 0}
 					<h4>Strategy</h4>
 					<ul class="findings">
-						{#each result.position_report.strategy as item (item)}
-							<li>{item}</li>
+						{#each result.position_report.strategy as item (item.text)}
+							<li class:critical={item.priority === 1}>{item.text}</li>
 						{/each}
 					</ul>
 				{/if}
@@ -152,24 +158,28 @@
 									cp.new_tactics.length > 0 ||
 									cp.removed_tactics.length > 0 ||
 									cp.new_strategy.length > 0 ||
-									cp.removed_strategy.length > 0}
+									cp.removed_strategy.length > 0 ||
+									cp.newly_attacked.length > 0}
 								<div class="checkpoint">
 									<span class="checkpoint-label">After {cp.move_san}</span>
 									<p class="checkpoint-material">{cp.material}</p>
 									{#if !hasChanges}
 										<p class="no-findings">No changes</p>
 									{/if}
-									{#each cp.new_tactics as t (t)}
-										<p class="finding tactic added">+ {t}</p>
+									{#each cp.new_tactics as t (t.text)}
+										<p class="finding tactic added">+ {t.text}</p>
 									{/each}
-									{#each cp.removed_tactics as t (t)}
-										<p class="finding tactic removed">− {t}</p>
+									{#each cp.removed_tactics as t (t.text)}
+										<p class="finding tactic removed">− {t.text}</p>
 									{/each}
-									{#each cp.new_strategy as s (s)}
-										<p class="finding strategic added">+ {s}</p>
+									{#each cp.new_strategy as s (s.text)}
+										<p class="finding strategic added">+ {s.text}</p>
 									{/each}
-									{#each cp.removed_strategy as s (s)}
-										<p class="finding strategic removed">− {s}</p>
+									{#each cp.removed_strategy as s (s.text)}
+										<p class="finding strategic removed">− {s.text}</p>
+									{/each}
+									{#each cp.newly_attacked as a (a.text)}
+										<p class="finding attacked">⚠ {a.text}</p>
 									{/each}
 								</div>
 							{/each}
@@ -181,24 +191,28 @@
 									cp.new_tactics.length > 0 ||
 									cp.removed_tactics.length > 0 ||
 									cp.new_strategy.length > 0 ||
-									cp.removed_strategy.length > 0}
+									cp.removed_strategy.length > 0 ||
+									cp.newly_attacked.length > 0}
 								<div class="checkpoint">
 									<span class="checkpoint-label">After {cp.move_san}</span>
 									<p class="checkpoint-material">{cp.material}</p>
 									{#if !hasChanges}
 										<p class="no-findings">No changes</p>
 									{/if}
-									{#each cp.new_tactics as t (t)}
-										<p class="finding tactic added">+ {t}</p>
+									{#each cp.new_tactics as t (t.text)}
+										<p class="finding tactic added">+ {t.text}</p>
 									{/each}
-									{#each cp.removed_tactics as t (t)}
-										<p class="finding tactic removed">− {t}</p>
+									{#each cp.removed_tactics as t (t.text)}
+										<p class="finding tactic removed">− {t.text}</p>
 									{/each}
-									{#each cp.new_strategy as s (s)}
-										<p class="finding strategic added">+ {s}</p>
+									{#each cp.new_strategy as s (s.text)}
+										<p class="finding strategic added">+ {s.text}</p>
 									{/each}
-									{#each cp.removed_strategy as s (s)}
-										<p class="finding strategic removed">− {s}</p>
+									{#each cp.removed_strategy as s (s.text)}
+										<p class="finding strategic removed">− {s.text}</p>
+									{/each}
+									{#each cp.newly_attacked as a (a.text)}
+										<p class="finding attacked">⚠ {a.text}</p>
 									{/each}
 								</div>
 							{/each}
@@ -388,6 +402,10 @@
 
 	.finding.strategic {
 		color: #4338ca;
+	}
+
+	.finding.attacked {
+		color: #7c3aed;
 	}
 
 	.finding.removed {
