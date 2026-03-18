@@ -1,0 +1,92 @@
+[
+	{
+		"id": "hanging_piece",
+		"tags": ["hanging", "undefended"],
+		"title": "Hanging Pieces",
+		"content": "A hanging piece is undefended and can be captured for free. Always scan for hanging pieces before making a move. If your piece is hanging, either defend it, move it to safety, or create a counter-threat that is more valuable. When the opponent has a hanging piece, calculate carefully before capturing — the piece may be bait for a trap."
+	},
+	{
+		"id": "fork",
+		"tags": ["forks", "fork"],
+		"title": "Forks",
+		"content": "A fork is a move that attacks two or more enemy pieces simultaneously, forcing the opponent to lose material since they can only save one. Knights are particularly dangerous fork pieces due to their irregular movement. Always watch for knight outpost squares from which a fork could be delivered. When you see a fork threat, verify that the forking piece itself won't be captured immediately."
+	},
+	{
+		"id": "pin",
+		"tags": ["pinned", "pin"],
+		"title": "Pins",
+		"content": "A pin is when a piece cannot move without exposing a more valuable piece behind it to capture. An absolute pin (to the king) means the pinned piece cannot legally move at all. A relative pin (to the queen or rook) means moving would lose significant material. To exploit a pin: pile more attackers onto the pinned piece, or attack the pinning piece with a less valuable piece."
+	},
+	{
+		"id": "skewer",
+		"tags": ["skewer", "skewers"],
+		"title": "Skewers",
+		"content": "A skewer is the reverse of a pin — a valuable piece is attacked and must move, exposing a less valuable piece behind it to capture. Kings and queens are most often the front piece in a skewer. After forcing the front piece to move, the piece behind is captured. When your king or queen is on the same rank, file, or diagonal as a weaker piece, watch for skewer threats."
+	},
+	{
+		"id": "discovered_attack",
+		"tags": ["discovered attack", "discovered check"],
+		"title": "Discovered Attacks and Discovered Checks",
+		"content": "A discovered attack occurs when moving one piece unmasks an attack by a piece behind it. A discovered check is especially powerful because the opponent must deal with the check while the moving piece can act freely. The piece delivering the discovered attack is often free to make a threatening move of its own, creating a double threat."
+	},
+	{
+		"id": "double_check",
+		"tags": ["double check"],
+		"title": "Double Check",
+		"content": "A double check attacks the king with two pieces simultaneously. The only legal response is a king move — blocking or capturing one attacker does not help when two pieces give check. Double checks often arise from discovered checks. They are among the most powerful tactical motifs and frequently lead to forced checkmate."
+	},
+	{
+		"id": "back_rank",
+		"tags": ["back rank"],
+		"title": "Back Rank Weakness",
+		"content": "A back rank weakness occurs when a king on its starting rank has no escape squares (blocked by its own pawns) and the opponent has a rook or queen that can deliver checkmate along that rank. Prevent back rank mate by creating a luft (escape square) by pushing one of the pawns in front of the king. Exploit the opponent's back rank weakness with rook or queen infiltration on the eighth (or first) rank."
+	},
+	{
+		"id": "trapped_piece",
+		"tags": ["trapped", "no safe squares"],
+		"title": "Trapped Pieces",
+		"content": "A trapped piece has no safe square to move to — every possible destination is guarded by a cheaper enemy piece. Bishops trapped behind pawn chains or knights pushed to the edge of the board are common examples. When a piece is trapped, either rescue it immediately with a preparatory move or accept the loss while generating enough counterplay. Provoking the opponent's piece with pawn advances is a classic trapping technique."
+	},
+	{
+		"id": "xray",
+		"tags": ["x-ray", "x-rays"],
+		"title": "X-Ray Attacks",
+		"content": "An x-ray attack is when a sliding piece (bishop, rook, or queen) exerts influence through one piece to another behind it. X-ray threats often become decisive when the blocking piece moves. Use x-ray awareness to defend pieces indirectly, or to set up combination where the blocking piece is removed."
+	},
+	{
+		"id": "deflection",
+		"tags": ["sole defender", "deflection"],
+		"title": "Deflection and Overloaded Defenders",
+		"content": "Deflection forces a defending piece away from its defensive duty. An overloaded piece is required to perform two defensive tasks simultaneously; when forced to abandon one, the other is lost. Identify pieces that are the sole defender of multiple valuable targets, then attack or sacrifice to force them off their duty. This motif frequently sets up a winning capture or checkmate."
+	},
+	{
+		"id": "removing_defender",
+		"tags": ["removes defense"],
+		"title": "Removing the Defender",
+		"content": "Removing the defender means capturing or driving away the piece that guards a valuable target. After the guard is eliminated, the previously protected piece becomes vulnerable. Look for sequences where capturing a defender, even at material cost, allows winning an even more valuable piece. Verify the exchange is profitable before committing."
+	},
+	{
+		"id": "interference",
+		"tags": ["would block"],
+		"title": "Interference",
+		"content": "Interference places one of your pieces on a square that disrupts communication between two enemy pieces. Most commonly, it blocks a slider from defending a key square or piece. The interference move itself may be a sacrifice — what matters is that the disruption creates a winning tactical sequence. Look for squares on an enemy slider's defensive ray where you can interpose your own piece."
+	},
+	{
+		"id": "battery",
+		"tags": ["form a battery", "battery"],
+		"title": "Batteries",
+		"content": "A battery is two or more pieces of the same side lined up on the same rank, file, or diagonal, creating doubled firepower. A queen and rook battery on an open file, or a queen behind a bishop on a diagonal, multiplies attacking pressure. Use batteries to overwhelm defenders along a critical line. Batteries are especially effective when pointed at the enemy king."
+	},
+	{
+		"id": "desperado",
+		"tags": ["desperado"],
+		"title": "Desperado",
+		"content": "A desperado is a piece that is going to be captured no matter what, so it tries to cause maximum damage first by capturing the most valuable enemy piece it can reach. When you have a doomed piece, calculate if there is a profitable capture available before it is taken. This can turn a material loss into a favorable exchange or even a winning sacrifice."
+	},
+	{
+		"id": "stalemate",
+		"tags": ["stalemate"],
+		"title": "Stalemate",
+		"content": "Stalemate occurs when the side to move has no legal moves and is not in check — the game is immediately drawn. When winning, avoid stalemating the opponent: keep the enemy king mobile or ensure it always has at least one legal move. When losing, actively seek stalemate as a drawing resource by sacrificing material to leave the opponent no legal moves."
+	}
+]

@@ -1,0 +1,38 @@
+[
+	{
+		"id": "weak_squares",
+		"tags": ["weak square", "outpost"],
+		"title": "Weak Squares and Outposts",
+		"content": "A weak square is one that cannot be defended by a pawn and that an enemy piece can occupy safely. Outposts are weak squares deep in the opponent's half of the board — perfect homes for knights or bishops. Pieces on outposts cannot be dislodged by pawns and often dominate the position. Identify your opponent's weak squares and maneuver pieces toward them; simultaneously, avoid creating pawn advances that leave squares behind them undefended."
+	},
+	{
+		"id": "outpost_knight",
+		"tags": ["centralized knight", "outpost"],
+		"title": "Centralized Knights",
+		"content": "A knight on e5 or d5 (or e4/d4 for Black) is often the most powerful piece on the board. Centralized knights control up to eight squares and are immune to attack by enemy pawns if properly supported. Knights lose value at the edge of the board ('a knight on the rim is dim'). Maneuver knights to strong central squares and support them with pawns."
+	},
+	{
+		"id": "open_files",
+		"tags": ["open file", "rook on the open"],
+		"title": "Open Files and Rook Activity",
+		"content": "Rooks achieve their full potential on open files (files without any pawns). Doubling rooks on an open file creates overwhelming pressure along that line. The seventh rank is a particularly powerful destination for rooks — they restrict the enemy king and attack pawns that haven't moved. Trade off the pieces blocking your rooks' files, and use rooks to control the game's key lines."
+	},
+	{
+		"id": "piece_coordination",
+		"tags": ["piece activity", "coordination"],
+		"title": "Piece Coordination",
+		"content": "Well-coordinated pieces work together to control key squares and create multiple threats. Pieces that aim at the same target or support each other's entry squares are far more powerful than the sum of their individual values. Before attacking, ensure all your pieces are active and pointing in the right direction. A single active piece rarely wins; combined piece activity usually does."
+	},
+	{
+		"id": "king_attack",
+		"tags": ["king zone", "king is under pressure"],
+		"title": "King Attacks",
+		"content": "When the enemy king's zone is under attack by multiple pieces, a decisive breakthrough is often available. The attacking player should bring every available piece toward the king and maximize the number of attackers. Sacrifices that open lines toward the king or eliminate key defenders are frequently correct. Calculate checks and forcing moves first — in king attacks, concrete calculation beats general principles."
+	},
+	{
+		"id": "pawn_breaks",
+		"tags": ["pawn break", "pawn structure"],
+		"title": "Pawn Breaks",
+		"content": "A pawn break is an advance of a pawn that challenges the opponent's pawn structure and opens lines for pieces. Typical breaks include c5, d5, e5, f5, or their equivalents on the other side. Before executing a pawn break, ensure your pieces are well-placed to exploit the lines that will be opened. Pawn breaks can transform a static position into a dynamic one and liberate otherwise passive pieces."
+	}
+]

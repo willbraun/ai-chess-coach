@@ -43,6 +43,7 @@
 		position_report: PositionReport;
 		comparison_text: string | null;
 		line_comparison: LineComparison | null;
+		coaching_text: string | null;
 	}
 
 	let fen = $state('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
@@ -223,6 +224,13 @@
 					<p>{result.comparison_text}</p>
 				{/if}
 			</div>
+
+			{#if result.coaching_text}
+				<div class="coaching-section">
+					<h3>AI Coach</h3>
+					<p class="coaching-text">{result.coaching_text}</p>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </main>
@@ -423,5 +431,24 @@
 	.comparison-column h4 {
 		margin-top: 0;
 		margin-bottom: 0.5rem;
+	}
+	.coaching-section {
+		margin-top: 2rem;
+		background: #f0fdf4;
+		border: 1px solid #86efac;
+		border-radius: 8px;
+		padding: 1rem 1.25rem;
+	}
+
+	.coaching-section h3 {
+		margin: 0 0 0.5rem 0;
+		font-size: 1rem;
+		color: #15803d;
+	}
+
+	.coaching-text {
+		margin: 0;
+		line-height: 1.6;
+		color: #1a1a1a;
 	}
 </style>

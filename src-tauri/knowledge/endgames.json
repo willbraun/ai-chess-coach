@@ -1,0 +1,26 @@
+[
+	{
+		"id": "king_activity",
+		"tags": ["king activity", "king endgame"],
+		"title": "King Activity in Endgames",
+		"content": "In endgames, the king becomes a powerful fighting piece and should be centralized immediately. An active king on d4, d5, e4, or e5 controls critical squares and supports passed pawns. A passive king stuck in the corner or on the back rank is a liability. The player who activates their king faster in the endgame often has a decisive advantage."
+	},
+	{
+		"id": "opposition",
+		"tags": ["opposition"],
+		"title": "Opposition",
+		"content": "Opposition occurs when two kings stand on the same rank, file, or diagonal with an odd number of squares between them. The player who does NOT have to move has the opposition and gains a key advantage in king-and-pawn endgames. Maintaining the opposition prevents the enemy king from advancing and can result in zugzwang. Understanding opposition is essential for converting pawn endgames."
+	},
+	{
+		"id": "passed_pawn",
+		"tags": ["passed pawn"],
+		"title": "Passed Pawns",
+		"content": "A passed pawn has no enemy pawns blocking it or guarding adjacent files — it can potentially advance to the queening square. Passed pawns must be either blockaded or captured; otherwise they become increasingly threatening. 'A passed pawn is a criminal who should be kept under lock and key.' Support your passed pawn with your king and rooks (behind the pawn) to maximize the threat of queening."
+	},
+	{
+		"id": "rook_endgame",
+		"tags": ["rook on the", "seventh rank"],
+		"title": "Rook Endgames",
+		"content": "Rook endgames are the most common endgame type and require specific techniques. The Lucena and Philidor positions are fundamental patterns to know. Place your rook on the seventh rank to attack pawns and cut off the enemy king. Use the Lucena method (building a bridge) to escort a passed pawn to promotion. The defending rook should generally use Philidor's position — keeping the defending rook on the third rank to cut off the enemy king, then switching to checking from behind when the pawn advances."
+	}
+]

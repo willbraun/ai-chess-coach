@@ -1,0 +1,26 @@
+[
+	{
+		"id": "development",
+		"tags": ["development", "develop"],
+		"title": "Piece Development",
+		"content": "Rapid piece development is a cornerstone of opening play. Move knights before bishops, and avoid moving the same piece twice in the opening without a strong reason. Undeveloped pieces have zero impact on the game; the player who develops faster controls more of the board. As a rule of thumb: develop all minor pieces before launching an attack or advancing pawns aggressively."
+	},
+	{
+		"id": "center_control",
+		"tags": ["centralized", "center control"],
+		"title": "Center Control",
+		"content": "Controlling the central squares (d4, d5, e4, e5) gives pieces maximum mobility and restricts the opponent. Centralized pieces have more attacking and defensive options than pieces on the edges. Pawn presence in the center supports piece outposts and controls key squares. Even if you don't occupy the center with pawns, aim to influence it with pieces and hypermodern setups."
+	},
+	{
+		"id": "king_safety",
+		"tags": ["pawn shield", "king safety"],
+		"title": "King Safety and the Pawn Shield",
+		"content": "A castled king is usually safer than one stuck in the center. After castling, maintain the pawn shield in front of the king — avoid unnecessary advances of the g, h, or f pawns when the king is behind them. An exposed king without a pawn shield is vulnerable to attacks along open files, diagonals, and the back rank. Prioritize king safety over material gains early in the middlegame."
+	},
+	{
+		"id": "tempo",
+		"tags": ["tempo"],
+		"title": "Tempo",
+		"content": "Tempo refers to a unit of time in chess — one move. Gaining tempo means forcing the opponent to react rather than pursue their own plan. Common tempo-gaining moves include checks, threats to win material, and developing moves that also attack. Conversely, losing tempo by retreating unnecessarily or making aimless moves allows the opponent to build up their position. In tactical positions, gaining or losing a single tempo can be decisive."
+	}
+]
